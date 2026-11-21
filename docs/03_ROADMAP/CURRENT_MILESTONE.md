@@ -10,9 +10,9 @@
 
 ## Missions
 
-| Mission | Statut |
-|---|---|
-| M0.1 Initialisation du dépôt | Non commencée |
+| Mission | Statut | comment |
+|---|---|---|
+| M0.1 Initialisation du dépôt | fait | https://github.com/kether59/MyVidLib
 | M0.2 Création de la solution | Non commencée |
 | M0.3 Configuration des projets | Non commencée |
 | M0.4 Première compilation | Non commencée |

@@ -16,7 +16,7 @@
 
 - **Clé d'équivalence des métadonnées**: `(sujet typé, FieldName, LocaleCode, Provenance, ProviderId, ValueType, CandidateValue canonique)` définit l'équivalence. Deux candidats équivalents ne créent pas de doublon ; la synchronisation réutilise la ligne existante, met à jour `RawValue` et `LastFetchedAt`, sans modifier validation ni sélection. Une valeur canonique différente crée un nouveau candidat `Proposed`.
 
-- **État de session (`WatchSession.Status`)**: `WatchSession.Completed` est remplacé par `WatchSession.Status` avec valeurs `EndedNormally`, `Error`, `Interrupted`. `EndedNormally` signifie arrêt contrôlé, pas fin du média ni œuvre visionnée. `MediaEndReached` distingue fin naturelle signalée par le lecteur.
+- **État de session (`WatchSession.Status`)**: `WatchSession.Status` utilise les valeurs `InProgress`, `EndedNormally`, `Interrupted` et `Error`. `EndedNormally` signifie arrêt contrôlé, pas fin du média ni œuvre visionnée. `MediaEndReached` distingue fin naturelle signalée par le lecteur.
 
 - **Sélection d'association**: Les règles de sélection privilégient la dernière association exploitables ; `Primary` puis `Alternative` pour œuvre sur fichier complet, avec départage stable par version et identifiant fichier. Les parties suivent règle d'intervalle dédiée : `PartNumber` obligatoire et positif, `WorkStartMs >= 0` et `WorkEndMs > WorkStartMs` requis pour association confirmée/manuelle. Aucun historique n'est supprimé lors changement d'association ; le nouveau pointeur de progression mis à jour au début effective de lecture.
 
@@ -30,7 +30,7 @@
 
 ### Session et progression
 
-- `WatchSession.Completed` est remplacé dans la recommandation par `EndedNormally`, qui signifie arrêt contrôlé de la session, pas fin du média ni œuvre visionnée.
+- `EndedNormally` est l'état terminal de `WatchSession.Status` (arrêt contrôlé de la session, pas fin du média ni œuvre visionnée).
 - `MediaEndReached` distingue la fin naturelle signalée par le lecteur de la terminaison de session ; il peut être inconnu.
 - Transitions proposées : `InProgress` vers `EndedNormally`, `Error` ou `Interrupted`. Un arrêt normal après cinq minutes donne `EndedNormally` sans faire passer `WatchProgress` à `Watched`.
 - `Watched` nécessite une confirmation utilisateur ou une politique automatique explicitement définie. La fin de session et la fin naturelle du média ne suffisent pas seules. Une session ouverte après crash reste réconciliable sans changement automatique de progression.
@@ -46,7 +46,7 @@
 
 Les décisions structurelles antérieures restent inchangées : `MediaWork` commun en TPH, `Movie`/`Series`/`Episode`, Anime comme classification, saisons séparées, versions/fichiers/affectations distincts, rôles d'affectation, scans conservateurs, métadonnées avec provenance, correction manuelle prioritaire, progression par utilisateur, position en millisecondes relative à l'œuvre, distinction session/progression et choix initiaux SQLite/EF Core.
 
-Le rattachement obligatoire de l'épisode par `SeriesWorkId` et la saison facultative sont traités comme décisions retenues, conformément à la demande V2.2.1. Les propriétés et politiques introduites dans cette passe — offsets des parties, normalisation des candidats, `EndedNormally`, critères de sélection et replis — restent **PROPOSÉES** et attendent la validation humaine.
+Le rattachement obligatoire de l'épisode par `SeriesWorkId` à une série (saison facultative) est VALIDÉ, conformément à la section 1 de `DATA_MODEL.md`. Les propriétés et politiques introduites dans cette passe — offsets des parties, normalisation des candidats, `EndedNormally`, critères de sélection et replis — restent **PROPOSÉES** et attendent la validation humaine.
 
 ## 3. Propriétés ajoutées ou précisées
 
@@ -68,7 +68,6 @@ Le rattachement obligatoire de l'épisode par `SeriesWorkId` et la saison facult
 
 - Source et validation humaine des `WorkStartMs`/`WorkEndMs`, traitement des intervalles incohérents et acceptation du repli vers une partie ultérieure.
 - Utilisation de bornes physiques sur `Part` et condition de correspondance exacte entre durée physique et intervalle logique.
-- Remplacement définitif du nom `Completed` par `EndedNormally`.
 - Délai de réconciliation d'une session `InProgress` après crash ; utilité exacte de l'état `Error`.
 - Seuil éventuel d'automatisation de `Watched`.
 - Règles de canonicalisation par champ (notamment listes, dates, images), validation fournisseur et sélection lorsque la valeur fournisseur change ; nécessité éventuelle d'un audit de chaque observation.

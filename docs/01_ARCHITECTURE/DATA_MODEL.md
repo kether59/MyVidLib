@@ -1,7 +1,7 @@
-# MyVidLib — Modèle de données conceptuel V2.2
+﻿# MyVidLib — Modèle de données conceptuel V2.2.1
 
-**Version :** Conceptuelle V2.2
-**Statut :** PROPOSÉ — en attente de validation humaine.
+**Version :** Conceptuelle V2.2.1
+**Statut :** PROPOSÉ — EN ATTENTE DE VALIDATION HUMAINE.
 **Périmètre :** conception conceptuelle uniquement ; aucune implémentation EF Core ou base de données ne doit être créée avant arbitrage.
 
 ## 1. Statut et périmètre
@@ -23,11 +23,11 @@ Le périmètre initial conserve `Movie`, `Series` et `Episode` comme valeurs du 
 
 ### Statuts de décision
 
-- **VALIDÉ** — principes établis par le propriétaire dans les documents de référence : `MediaWork` et ses trois types TPH, séparation œuvres/versions/fichiers, associations plusieurs-à-plusieurs, classification Anime, `StoryArc`, suivi individuel par œuvre, identifiants typés, disponibilité indépendante des racines et fichiers, priorité fournisseurs configurable, archivage logique et protection des fichiers originaux.
+- **VALIDÉ** — principes établis par le propriétaire dans les documents de référence : `MediaWork` et ses trois types TPH, épisodes obligatoirement rattachés par `SeriesWorkId` à une série avec saison facultative, séparation œuvres/versions/fichiers, associations plusieurs-à-plusieurs avec rôles `Primary`, `Alternative`, `Part`, `Segment`, `Other`, classification Anime, `StoryArc`, suivi individuel par œuvre avec position en millisecondes relative à l'œuvre, distinction sessions/progression, identifiants typés, disponibilité indépendante des racines et fichiers, priorité fournisseurs configurable, archivage logique et protection des fichiers originaux.
 - **PROPOSÉ** — recommandations de cette conception, notamment les champs de segment, les clés composites, les règles de sélection de métadonnées et les index Windows/SQLite ci-dessous ; elles attendent validation.
 - **À ARBITRER** — décisions non prises, récapitulées à la section 19.
 
-Les éléments ajoutés en V2.2 qui ne figurent pas dans la liste des principes VALIDÉS restent des recommandations PROPOSÉES ; leur présence dans le modèle ne vaut pas validation du propriétaire.
+Les éléments ajoutés en V2.2 et V2.2.1 qui ne figurent pas dans la liste des principes VALIDÉS restent des recommandations PROPOSÉES ; leur présence dans le modèle ne vaut pas validation du propriétaire.
 
 ## 2. Principes de conception
 
@@ -68,10 +68,10 @@ erDiagram
   USER ||--o{ WATCH_SESSION : creates
   MEDIA_WORK ||--o{ WATCH_PROGRESS : tracked
   MEDIA_WORK ||--o{ WATCH_SESSION : tracked
-  MEDIA_FILE o|--o{ WATCH_SESSION : used
+  MEDIA_FILE o|--o{ WATCH_SESSION : historical_file
   MEDIA_FILE o|--o{ WATCH_PROGRESS : last_file
   MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_PROGRESS : last_assignment
-  MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_SESSION : used_assignment
+  MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_SESSION : historical_assignment
   PROVIDER ||--o{ MEDIA_WORK_EXTERNAL_ID : provides
   MEDIA_WORK ||--o{ MEDIA_WORK_EXTERNAL_ID : identifies
   PROVIDER ||--o{ SEASON_EXTERNAL_ID : provides
@@ -90,20 +90,23 @@ erDiagram
 
 ### MediaWork
 
-Entité commune de toutes les œuvres locales. Elle porte l'identité interne stable et les propriétés partagées : titre interne, titre original de travail, titre de tri, statut de catalogue, dates de création/modification, archive et provenance de la fiche. Dans la ligne TPH d'un épisode, **la recommandation PROPOSÉE** est que `SeriesWorkId` soit obligatoire et `SeasonId` facultatif.
+Entité commune de toutes les œuvres locales. Elle porte l'identité interne stable et les propriétés partagées : titre interne, titre original de travail, titre de tri, statut de catalogue, dates de création/modification, archive et provenance de la fiche. Dans la ligne TPH d'un épisode, `SeriesWorkId` est obligatoire et `SeasonId` facultatif.
 
 Les propriétés propres à chaque spécialisation sont séparées :
 
 | Spécialisation | Propriétés propres principales |
 |---|---|
-| `Movie` | date ou année de sortie, durée de référence |
-| `Series` | statut de diffusion, nombre de saisons, période de diffusion |
-| `Episode` | **PROPOSÉ** : `SeriesWorkId` obligatoire, `SeasonId` facultatif ; numéro interne éventuel, date de diffusion, durée de référence, type d'épisode |
+| Movie | date ou année de sortie, durée de référence (DurationMs) |
+| Series | statut de diffusion, nombre de saisons, période de diffusion |
+| **Episode** | **SeriesWorkId obligatoire, SeasonId facultatif ; numéro interne éventuel, date de diffusion, durée de référence (si connue, la durée de l'épisode en millisecondes relative au début de l'épisode), type d'épisode |
 
-`Episode` est toujours une œuvre selon le modèle. Il ne représente pas un fichier, une partie ni une version.
+**Pour les épisodes :**
+- L'entité MediaWork d'un épisode porte SeriesWorkId obligatoire, car il appartient obligatoirement à une série. L'épisode peut exister sans saison connue (SeasonId = null).
+- **La propriété DurationMs sur un épisode représente la durée totale de l'épisode en millisecondes, relative au début de l'épisode**. Elle est facultative et doit être déterminée par FFprobe ou renseignée manuellement. Une valeur nulle indique que la durée est inconnue. Cette durée peut différer des bornes WorkStartMs/WorkEndMs d'une association Part spécifique : une partie d'un épisode ne couvre pas nécessairement toute sa durée. Un épisode sans fichier associé (MediaFileAssignment) n'a pas de durée connue ; son DurationMs sera nul jusqu'à ce qu'une association soit faite et que FFprobe fournisse la durée.
 
-`WorkType` vaut `Movie`, `Series` ou `Episode`. Les colonnes propres à un type restent conceptuellement séparées et nulles pour les autres types. Pour une ligne `Episode`, selon la recommandation proposée, `SeriesWorkId` désigne une ligne `MediaWork` de type `Series`; la saison peut rester inconnue (`SeasonId = null`) sans perdre l'appartenance à la série. Une classification contrôlée et extensible (`Classification`, `MediaWorkClassification`) identifie notamment `Anime` sans ajouter de type structurel.
+**WorkType vaut Movie, Series ou Episode.** Les colonnes propres à un type restent conceptuellement séparées et nulles pour les autres types. Pour une ligne Episode, SeriesWorkId désigne une ligne MediaWork de type Series; la saison peut rester inconnue (SeasonId = null) sans perdre l'appartenance à la série. Une classification contrôlée et extensible (Classification, MediaWorkClassification) identifie notamment Anime sans ajouter de type structurel.
 
+Episode est toujours une œuvre selon le modèle. Il ne représente pas un fichier, une partie ni une version.
 ### MediaWorkRelation
 
 Relation narrative ou éditoriale entre deux œuvres. Elle porte le type de relation et permet plusieurs relations pour une même œuvre.
@@ -120,7 +123,7 @@ La recommandation **PROPOSÉE** est de représenter les épisodes spéciaux cour
 
 ### Episode
 
-**Recommandation PROPOSÉE :** spécialisation de `MediaWork` toujours rattachée à une série par `SeriesWorkId` obligatoire et éventuellement à une saison connue par `SeasonId`. Elle peut exister sans fichier ou sans saison connue.
+`Episode` est toujours rattaché à une série par `SeriesWorkId` ; `SeasonId` est facultatif. Il peut exister sans fichier ou sans saison connue.
 
 Conserver `SeriesWorkId` sur l'épisode permet le rattachement même lorsque la saison est inconnue. Lorsque `SeasonId` est renseigné, la clé composite `(SeriesWorkId, SeasonId)` garantit que la saison appartient à cette même série ; l'identifiant direct de série évite de déduire une relation obligatoire depuis une saison qui peut être absente.
 
@@ -176,7 +179,8 @@ Lien explicite plusieurs-à-plusieurs entre une œuvre et un fichier physique. `
 - rôle contrôlé : `Primary`, `Alternative`, `Part`, `Segment`, `Other` ;
 - `PlaybackOrder`, facultatif hors rôle `Segment` ;
 - `PartNumber`, requis pour le rôle `Part` et réservé à une partie d'une œuvre découpée ;
-- `SegmentStartMs` et `SegmentEndMs`, facultatifs ;
+- `WorkStartMs` et `WorkEndMs`, bornes de la partie sur la timeline de l'œuvre (en millisecondes, avec précision au milliseconde) ; requises pour une association `Part` confirmée ou manuelle (nulles possibles tant qu'elle est `Proposed`) ; **ces valeurs doivent être relatives au début de l'épisode (`MediaWork.StartMs = 0`)** ;
+- `SegmentStartMs` et `SegmentEndMs`, bornes physiques facultatives dans le fichier, utiles aux rôles `Part` et `Segment` ;
 - langue ou variante seulement si elle n'est pas déjà définie par la version ;
 - date d'association ;
 - `MatchStatus` de correspondance et score éventuel ;
@@ -184,15 +188,23 @@ Lien explicite plusieurs-à-plusieurs entre une œuvre et un fichier physique. `
 
 Le statut de rapprochement est contrôlé : `Proposed`, `Confirmed`, `Rejected`, ou `Manual`. **Règles PROPOSÉES :** `SegmentStartMs` et `SegmentEndMs` sont renseignés ensemble ou restent tous deux nuls ; le début est positif ou nul et la fin est strictement supérieure au début. Si la durée du fichier est connue, la fin ne peut la dépasser. La cohérence des segments entre eux (chevauchement ou limites de durée) est également vérifiée avant validation de l'association.
 
+**Règles pour les parties (`Part`) :**
+- **Calcul initial des bornes :** si toutes les associations `Part` d'une même œuvre/version ont une durée physique connue (FFprobe) et qu'aucune discontinuité n'est détectée, la première partie peut avoir `WorkStartMs = 0`, puis chaque autre partie peut avoir `WorkStartMs = WorkEndMs de la partie précédente`. Ces bornes initiales doivent être **explicitement validées** ; elles ne sont pas recalculées automatiquement à chaque lecture.
+- Si une durée physique est inconnue ou si les parties ne forment pas une continuité parfaite, les bornes `WorkStartMs` et `WorkEndMs` doivent être renseignées explicitement par l'utilisateur ou un processus de validation humaine, car toute déduction automatique suppose une hypothèse qui peut être fausse.
+- **Rôle Alternative** : une association `Alternative` complète (sans segments) n'a pas de `WorkStartMs`/`WorkEndMs`. Son intervalle logique est `[0, Duration du fichier)` ; elle ne représente qu'une portion alternative d'une œuvre ou version, pas un fragment.
+- Un épisode peut avoir plusieurs associations `Part` et une association `Alternative`, chacune avec ses propres bornes logiques.
+
 Quand `MediaVersionId` est renseigné, une contrainte référentielle composite doit garantir que la version appartient à la même œuvre que l'association : le couple `(MediaWorkId, MediaVersionId)` de l'association référence `(MediaWorkId, Id)` de `MediaVersion`. Une simple validation de l'interface ne suffit pas.
 
 Portée de l'ordre et des parties :
 
-- `Segment` : `PlaybackOrder` est obligatoire et positif, relatif aux segments du même `MediaFileId`; si les bornes sont présentes, l'ordre doit être compatible avec `SegmentStartMs`. Il ne remplace pas les limites nécessaires à une reprise précise.
-- `Part` : `PartNumber` est obligatoire et positif ; il identifie la partie et détermine l'ordre par défaut pour le même `(MediaWorkId, MediaVersionId)`. `PlaybackOrder`, s'il est renseigné, est unique dans cette portée et doit être cohérent avec `PartNumber`.
-- `Alternative` : représente un autre fichier complet pour la même œuvre/version ; il n'est pas une partie et ne nécessite ni segment ni ordre de séquence.
-- `Primary` : au plus une association active par œuvre/version ; les autres fichiers complets utilisent `Alternative`.
-- Une association de fichier complet (`Primary` ou `Alternative`) n'a pas de bornes de segment. Si un fichier contient plusieurs œuvres et que les limites de ses segments sont inconnues, l'association peut être enregistrée comme proposée, mais la lecture segmentée/reprise ne peut pas supposer un offset.
+- `Segment` : `PlaybackOrder` est obligatoire et positif, relatif aux segments du même `MediaFileId`. Pour une association confirmée/manuelle, `SegmentStartMs` et `SegmentEndMs` sont tous deux requis afin de localiser l'épisode dans le fichier ; leur ordre doit correspondre à `PlaybackOrder`. Ces bornes physiques ne remplacent pas la position logique relative à l'épisode.
+- **`Part`** : **`PartNumber` est obligatoire et positif ; il identifie la partie et détermine l'ordre par défaut pour le même `(MediaWorkId, MediaVersionId)`**. `PlaybackOrder`, s'il est renseigné, est unique dans cette portée et doit être cohérent avec `PartNumber`. **`WorkStartMs >= 0` et `WorkEndMs > WorkStartMs` sont obligatoires pour une association confirmée/manuelle exploitable.**
+- Pour `Part`, la durée physique effective est `SegmentEndMs - SegmentStartMs` si les bornes physiques sont définies, sinon `MediaFile.DurationMs` si elle est connue. La durée logique est `WorkEndMs - WorkStartMs`. Si les deux durées sont connues, elles doivent être égales pour une correspondance exacte 1:1 ; un écart invalide la reprise automatique jusqu'à correction humaine. Une durée physique inconnue n'est pas déduite de la partie suivante.
+- Les intervalles logiques confirmés `[WorkStartMs, WorkEndMs)` ne se chevauchent pas. Un écart entre `WorkEndMs` d'une partie et `WorkStartMs` de la suivante est permis et représente une discontinuité, pas une durée à interpoler.
+- **Alternative** : représente un autre fichier complet pour la même œuvre/version ; il n'est pas une partie et ne nécessite ni segment ni ordre de séquence.
+- **Primary** : au plus une association active par œuvre/version ; les autres fichiers complets utilisent `Alternative`.
+- Une association de fichier complet (`Primary` ou `Alternative`) n'a pas de bornes de segment ni de `WorkStartMs`/`WorkEndMs`. Si un fichier contient plusieurs œuvres et que les limites de ses segments sont inconnues, l'association peut être enregistrée comme proposée, mais la lecture segmentée/reprise ne peut pas supposer un offset.
 
 ## 5. Diagramme catalogue et fichiers
 
@@ -227,6 +239,7 @@ erDiagram
 
 `MEDIA_WORK` porte le discriminateur `WorkType`; les détails de Movie, Series et Episode sont des colonnes conditionnelles de cette même table TPH.
 Dans ces diagrammes, les lignes vers `MEDIA_WORK` indiquées `episode_*` ne concernent que les lignes dont `WorkType = Episode`; les lignes `series_*` ne concernent que `WorkType = Series`. Elles sont contraintes par les clés composites et invariants décrits ci-dessous.
+Les bornes `WorkStartMs`/`WorkEndMs` des affectations `Part` sont des offsets sur la timeline de l'œuvre ; `SegmentStartMs`/`SegmentEndMs` sont des offsets physiques dans le fichier. Les références d'une `WatchSession` vers fichier et association représentent l'historique effectivement lu, pas le candidat automatique de la prochaine reprise.
 
 ## 6. Relations et cardinalités
 
@@ -236,8 +249,8 @@ Dans ces diagrammes, les lignes vers `MEDIA_WORK` indiquées `episode_*` ne conc
 - `MediaFile` 0,N `MediaFileAssignment`
 - `MediaFileAssignment` 0,1 `MediaVersion`
 - `MediaWork` de type `Series` 0,N `Season`
-- **PROPOSÉ** : `MediaWork` de type `Series` 0,N `Episode` ; chaque `Episode` appartient à exactement une série
-- **PROPOSÉ** : `Season` 0,N épisodes ; chaque `Episode` appartient à 0 ou 1 saison de sa série
+- `MediaWork` de type `Series` 0,N `Episode` ; chaque `Episode` appartient à exactement une série
+- `Season` 0,N épisodes ; chaque `Episode` appartient à 0 ou 1 saison de sa série
 - `EpisodeExternalReference` 0,N `EpisodeExternalMapping` (une référence proposée peut rester non rapprochée) ; chaque mapping vise exactement un épisode interne
 - `MediaWork` de type `Episode` 0,N `EpisodeExternalMapping`
 - `MediaWork` 0,N `MediaWorkRelation` comme source ou cible
@@ -374,28 +387,35 @@ Une combinaison `(ProviderId, ExternalKind, ProviderValue)` est unique au sein d
 
 ## 11. Métadonnées
 
-Les tables `MediaWorkMetadata` et `SeasonMetadata` préservent les clés étrangères typées. `MediaWorkMetadata` s'applique à toutes les œuvres de la table TPH, y compris les épisodes ; `SeasonMetadata` s'applique aux saisons. Chaque ligne représente une valeur candidate indépendante pour un champ et une langue ; aucune table d'historique supplémentaire n'est nécessaire tant que les candidats remplacés restent conservés.
+Les tables `MediaWorkMetadata` et `SeasonMetadata` préservent les clés étrangères typées. `MediaWorkMetadata` s'applique à toutes les œuvres de la table TPH, y compris les épisodes ; `SeasonMetadata` s'applique aux saisons. Chaque ligne représente une valeur candidate distincte pour un champ et une langue ; aucune table d'historique supplémentaire n'est nécessaire pour l'indexation initiale.
 
 Chaque candidat conserve :
 
 - nom de champ ;
 - code langue/locale non nul (`und` si inconnu) ;
-- valeur brute reçue (`RawValue`, nulle pour une valeur saisie manuellement) ;
-- valeur candidate exploitable (`CandidateValue`) ;
+- type contrôlé `ValueType` : `Text`, `Number`, `Date`, `List`, `Image`, `Structured` ;
+- valeur brute la plus récemment observée (`RawValue`, nulle pour une valeur saisie manuellement) ;
+- valeur candidate canonique (`CandidateValue`) encodée en JSON selon `ValueType` ;
 - provenance (`Provider`, `Manual`, `Local`) et fournisseur éventuel ;
 - validation (`Proposed`, `Validated`, `Rejected`), utilisateur et date de validation ;
 - indicateur `IsSelected` et date de sélection ;
-- date de récupération (`FetchedAt`) ;
+- première date de récupération (`FetchedAt`) et dernière date de récupération (`LastFetchedAt`), nulles pour les valeurs manuelles ;
 - date d'expiration ;
 - date de création.
 
-Chaque réception fournisseur crée un candidat distinct avec valeur brute, valeur interprétée, fournisseur, langue et dates. Les corrections manuelles créent de nouvelles lignes candidates `Manual`, validées et sélectionnées ; elles ne modifient ni n'effacent les anciennes valeurs fournisseurs. Le catalogue conserve ainsi l'historique des changements sans entité d'historique séparée.
+`CandidateValue` est une représentation canonique typée : texte JSON chaîne ; nombre JSON normalisé sans perte ; date ISO-8601 dans la sémantique définie pour le champ ; liste en tableau JSON ; image en référence stable (identifiant/URI fournisseur ou référence locale, jamais un blob dans cette ligne) ; donnée structurée en objet JSON. La sérialisation canonique supprime les différences de format sans signification (espaces, ordre des clés d'objet, représentation numérique/date) sans appliquer de comparaison insensible à la casse aux textes sauf règle propre au champ. L'ordre des éléments d'une liste est conservé sauf si le champ est défini comme un ensemble. `RawValue` conserve la dernière charge utile source utile à l'interprétation, pas nécessairement chaque réponse réseau historique.
+
+La clé logique d'équivalence est `(sujet typé, FieldName, LocaleCode, Provenance, ProviderId, ValueType, CandidateValue canonique)`. Deux candidats d'un même fournisseur sont donc équivalents uniquement pour le même sujet, champ, langue, type et valeur normalisée. Les synchronisations fournisseur font un upsert sur cette clé : si la valeur est équivalente, elles réutilisent la ligne, mettent à jour `RawValue` et `LastFetchedAt`, sans créer de doublon ni modifier sa validation ou sa sélection. `ExpiresAt` prend l'expiration explicite renvoyée ; si elle manque, la politique du fournisseur peut la recalculer, sinon l'expiration existante est conservée. Un changement de valeur canonique crée une nouvelle ligne `Proposed`, non sélectionnée ; l'ancien candidat et sa date de première récupération sont conservés. Une langue ou un type différent forme une autre clé et une autre valeur candidate.
+
+Les corrections manuelles créent des candidats `Manual` distincts lorsqu'elles changent la valeur ; une répétition de la même valeur normalisée est idempotente. Elles ne modifient ni n'effacent les anciennes valeurs fournisseurs. Une valeur manuelle validée et sélectionnée n'est jamais désélectionnée ou remplacée automatiquement par une synchronisation. Les fournisseurs de provenance différente conservent leurs candidats concurrents, même lorsque les valeurs sont identiques.
+
+`FetchedAt`/`LastFetchedAt` résument la première et la dernière observation équivalente, et `ExpiresAt` est rafraîchie selon la réponse ou la politique du fournisseur. Les observations intermédiaires identiques et leurs charges utiles ne sont pas conservées une par une en V1. La ligne candidate est l'état durable ; une table d'observations immuables ne serait justifiée que par un besoin ultérieur d'audit complet, et n'est pas ajoutée ici.
 
 Le mode de sélection proposé :
 
 - la sélection est faite séparément par sujet, champ et langue ;
-- une valeur manuelle validée peut être sélectionnée prioritairement jusqu'à une nouvelle validation humaine ;
-- sinon, un candidat fournisseur validé/sélectionné selon la priorité configurable peut servir de référence ;
+- une valeur manuelle validée et sélectionnée reste prioritaire jusqu'à une action humaine explicite ;
+- sinon, un candidat fournisseur validé selon la priorité configurable peut être sélectionné par une opération explicite de résolution ;
 - les valeurs candidates concurrentes restent conservées et non sélectionnées ;
 - une valeur vide, expirée ou rejetée ne remplace pas silencieusement la valeur actuellement sélectionnée.
 
@@ -429,23 +449,55 @@ Progression courante unique par utilisateur et œuvre. Elle porte :
 
 Unicité recommandée : `(UserId, MediaWorkId)`.
 
-L'unité milliseconde et une position relative à l'œuvre sont **PROPOSÉES**. Pour un épisode, la position est relative au début de l'épisode, non au début du fichier. Si l'association a `SegmentStartMs`, la position absolue du fichier vaut `SegmentStartMs + PositionMs`; la fin effective est bornée par `SegmentEndMs` si défini. Sans limites de segment, un offset nul n'est valable que lorsque l'association représente le fichier entier pour cette œuvre. Chaque épisode possède sa propre progression. Une progression de série (si retenue) est une information d'ensemble séparée : elle ne remplace ni ne résume par écrasement les progressions d'épisodes.
+L'unité milliseconde et une position relative à l'œuvre sont **VALIDÉES**. Pour un épisode, la position est relative au début de l'épisode, non au début du fichier. Si l'association a `SegmentStartMs`, la position absolue du fichier vaut `SegmentStartMs + PositionMs`; la fin effective est bornée par `SegmentEndMs` si défini. Sans limites de segment, un offset nul n'est valable que lorsque l'association représente le fichier entier pour cette œuvre. Chaque épisode possède sa propre progression. Une progression de série (si retenue) est une information d'ensemble séparée : elle ne remplace ni ne résume par écrasement les progressions d'épisodes.
+
+#### Reprise d'un épisode réparti sur plusieurs fichiers
+
+Chaque association `Part` porte `WorkStartMs` et `WorkEndMs`, explicites et relatifs au début de l'épisode. Ils ne sont pas recalculés à chaque reprise en additionnant les durées des fichiers, car cette somme supposerait une continuité qui peut être fausse. Lorsqu'une continuité a été vérifiée et les durées connues, une valeur initiale peut être proposée par `WorkStartMs[1] = 0`, puis `WorkStartMs[i] = WorkEndMs[i-1]` et `WorkEndMs[i] = WorkStartMs[i] + EffectiveDuration[i]`. Les bornes confirmées sont enregistrées sur chaque association. Un écart est permis et reste un écart.
+
+Exemple : partie 1 `[0, 600000)`, partie 2 `[600000, 1200000)`, reprise à `750000` : le fichier de la partie 2 est choisi et le seek physique vaut `0 + (750000 - 600000) = 150000 ms` si sa plage commence à zéro.
+
+`EffectiveDuration` est la durée FFprobe du fichier si aucune borne physique n'est définie, ou `SegmentEndMs - SegmentStartMs` si l'association ne représente qu'une plage du fichier. La plage physique par défaut commence à `0`; sinon son origine est `SegmentStartMs`. Sa durée, lorsqu'elle est connue, doit correspondre à `WorkEndMs - WorkStartMs`. Les bornes de l'œuvre définissent l'intervalle logique `[WorkStartMs, WorkEndMs)` même si FFprobe n'a pas fourni de durée. Une durée physique inconnue empêche toutefois de garantir un seek intérieur à la plage ; `PartNumber` et la partie suivante ne remplacent pas cette information.
+
+Pour reprendre à `PositionMs`, le lecteur cherche une association `Part` exploitable dont l'intervalle logique confirmé contient la position. La position physique à ouvrir est `PhysicalStartMs + (PositionMs - WorkStartMs)`, uniquement si la durée physique est connue et cohérente avec l'intervalle logique. À la borne exacte `PositionMs = WorkStartMs`, l'ouverture au début physique est exacte même si la durée est inconnue. Les intervalles confirmés ne doivent pas se chevaucher ; un chevauchement rend la sélection ambiguë et interdit la reprise automatique. `PlaybackOrder` explicite, sinon `PartNumber`, ordonne les parties mais ne détermine pas leurs offsets temporels.
+
+Si la position tombe dans une discontinuité, une partie absente, une plage dont la durée physique est inconnue ou une plage incohérente, repli déterministe : ouvrir au début physique la première partie exploitable dont `WorkStartMs` est strictement supérieur à la position et signaler que la reprise est ajustée. S'il n'en existe pas, ne pas fabriquer d'offset ni choisir silencieusement une partie antérieure : proposer un redémarrage depuis la première partie exploitable, en indiquant qu'il s'agit d'un redémarrage et sans déplacer la progression tant que la lecture n'a pas effectivement commencé. Les associations `Alternative`, archivées, rejetées, proposées ou dont le fichier n'est pas présent sur une racine accessible ne sont jamais candidates.
 
 Pour une progression associée à la `Series` abstraite, `PositionMs` et `DurationMs` restent nuls ; son état est un indicateur d'ensemble non substitutif. Les progressions `Movie` et `Episode` peuvent porter position et durée.
+
+`WatchProgress.Watched` décrit l'œuvre pour l'utilisateur, pas la dernière session. Le passage `Unwatched -> InProgress` accompagne le début effectif d'une lecture. Le passage à `Watched` exige une confirmation explicite de l'utilisateur ou une règle automatique préalablement configurée et satisfaite ; la fin d'une session, même `EndedNormally`, ne suffit jamais. `MediaEndReached = true` atteste la fin naturelle du média pour cette session, mais ne marque pas à lui seul l'œuvre `Watched`. Le seuil automatique éventuel reste **À ARBITRER**. Une nouvelle session ne rétrograde pas automatiquement une progression déjà `Watched`; seul un reset explicite la réinitialise.
+
+Exemple : après cinq minutes de lecture suivies d'une fermeture normale, la session devient `EndedNormally`, `MediaEndReached = false` et la progression reste `InProgress` (ou `Unwatched` si le début effectif n'a pas été enregistré). La fin du média, la fin normale de la session et la validation de l'œuvre comme visionnée sont trois faits distincts.
 
 Le dernier fichier utilisé est facultatif. L'association peut également être conservée pour reprendre dans le bon segment/version. Un fichier ou une association peuvent devenir `Missing` ou archivés sans supprimer la progression ; aucune suppression en cascade n'est permise. Lorsque l'association est renseignée, `MediaWorkId`, `LastMediaFileId` et `LastMediaFileAssignmentId` doivent identifier la même association.
 
 ### WatchSession
 
-`WatchSession` est l'enregistrement principal de l'historique consultable : une ligne par session de lecture, commencée par le lecteur ou déclarée manuellement. Elle porte début, fin, état, dernier checkpoint, `PositionMs`/`DurationMs` finales si connues, source, utilisateur et œuvre. La position reste relative à l'œuvre (épisode ou film), et non au fichier. Les états sont `InProgress`, `Completed`, `Interrupted` et `Error`. `Error` est réservé à une session qui n'a pas pu se terminer normalement pour une erreur de lecture ; les erreurs techniques détaillées restent dans les journaux.
+`WatchSession` est l'enregistrement principal de l'historique consultable : une ligne par session de lecture, commencée par le lecteur ou déclarée manuellement. Elle porte début, fin, état, dernier checkpoint, `PositionMs`/`DurationMs` finales si connues, `MediaEndReached` éventuellement connu, source, utilisateur et œuvre. La position reste relative à l'œuvre (épisode ou film), et non au fichier.
 
-Une session référence facultativement `MediaFileId` et `MediaFileAssignmentId`. Si l'association est renseignée, elle doit correspondre à la même œuvre et au même fichier. Ses références restent conservées si le fichier ou l'association devient `Missing` ou archivé ; aucune suppression en cascade n'est permise.
+Les états proposés sont `InProgress`, `EndedNormally`, `Interrupted` et `Error`. `EndedNormally` signifie uniquement que la session s'est terminée par un arrêt contrôlé du lecteur ; cela ne signifie ni que le média a atteint sa fin ni que l'œuvre est `Watched`. `MediaEndReached` vaut vrai uniquement si le lecteur a signalé la fin naturelle du média, faux si la session s'est terminée avant, et nul si l'information n'est pas connue (lecture manuelle ou ancien état non instrumenté). Le nom `Completed` de V2.2 est remplacé dans le modèle par `EndedNormally` pour éviter cette ambiguïté.
 
-Une session `InProgress` conserve son dernier checkpoint et peut rester ouverte après un arrêt brutal de l'application. Au démarrage, les sessions non terminées sont réconciliées ; leur passage à `Interrupted` dépend d'une règle de péremption/confirmation encore **À ARBITRER**. Les mises à jour périodiques modifient la progression et le checkpoint de la session existante ; elles ne créent pas de nouvelles lignes historiques pour les pauses ou sauvegardes de position.
+Transitions proposées : création en `InProgress`, puis une seule transition terminale vers `EndedNormally` (fermeture/arrêt normal), `Error` (erreur de lecture ayant terminé la session) ou `Interrupted` (interruption anormale confirmée lors de la réconciliation). Une pause ou une sauvegarde périodique ne termine pas la session et ne crée pas une nouvelle ligne. Les états terminaux ne changent pas en conséquence d'une mise à jour de progression.
 
-Une lecture manuelle peut produire une session sans fichier, position ou durée connus. Les sessions de lecture concernent les œuvres lisibles (`Movie` et `Episode`), pas la `Series` abstraite.
+Une session référence facultativement `MediaFileId` et `MediaFileAssignmentId`. Si l'association est renseignée, elle doit correspondre à la même œuvre et au même fichier. Cette référence est historique : elle reste conservée si le fichier ou l'association devient `Missing`, archivé ou rejeté ; aucune suppression en cascade n'est permise. Une session `InProgress` conserve son dernier checkpoint et peut rester ouverte après un arrêt brutal. La durée avant de la réconcilier en `Interrupted` reste **À ARBITRER** ; cette réconciliation ne change pas automatiquement `WatchProgress` en `Watched`.
 
-**Règle PROPOSÉE :** une session `InProgress` n'a pas encore `EndedAt`; les états `Completed`, `Interrupted` et `Error` sont terminaux et portent une date de fin. `LastCheckpointAt` indique la dernière persistance d'état, sans générer une ligne d'historique additionnelle.
+Une lecture manuelle peut produire une session sans fichier, position, durée ou information de fin connus. Les sessions de lecture concernent les œuvres lisibles (`Movie` et `Episode`), pas la `Series` abstraite. `InProgress` n'a pas encore `EndedAt`; `EndedNormally`, `Interrupted` et `Error` sont terminaux et portent une date de fin. `LastCheckpointAt` indique la dernière persistance, sans générer de ligne d'historique additionnelle.
+
+### Sélection d'association pour une nouvelle lecture
+
+La référence de `WatchSession` est historique ; `WatchProgress.LastMediaFileId` et `LastMediaFileAssignmentId` désignent la dernière association réellement utilisée, même si elle est devenue invalide. Ce dernier pointeur n'est pas une instruction de lecture. Une nouvelle session choisit sa source à nouveau et ne réécrit pas les anciennes sessions.
+
+Une association automatique est exploitable uniquement si elle appartient à l'œuvre demandée, a `IsArchived = false`, `MatchStatus` égal à `Confirmed` ou `Manual`, et pointe vers un fichier `Present` dans une racine `Accessible`. `Proposed`, `Rejected`, archivée, `Missing`, `Unknown`, ainsi que le rôle `Other`, sont exclus. Un `Segment` sans bornes physiques confirmées/manuelles ne peut pas être choisi pour une reprise automatique.
+
+Ordre déterministe proposé :
+
+1. Réutiliser la dernière association si elle reste exploitable et représente correctement la position demandée (pour `Part`, l'intervalle logique doit contenir `PositionMs` et le seek physique doit être vérifiable, sauf à `WorkStartMs`; pour `Segment`, la position doit tenir dans les bornes physiques).
+2. Construire l'ensemble des candidats qui permettent un seek exact. Parmi leurs versions, préférer la dernière version utilisée si elle figure dans cet ensemble ; sinon ordonner par identifiant stable, `MediaVersionId` nul en premier. Dans la version retenue, ordre de rôle : `Primary`, `Part` dont l'intervalle couvre exactement la position, `Segment` dont les bornes couvrent la position, puis `Alternative` complète. À rôle/position équivalents, départager par `PlaybackOrder`, puis `PartNumber`, puis `MediaFileId` croissant.
+3. Si aucun candidat ne permet un seek exact, appliquer le repli multipartite : prochaine `Part` exploitable par `WorkStartMs` strictement supérieur à la position ; départager les égalités par dernière version utilisée, identifiant de version (nul en premier), `PlaybackOrder`/`PartNumber`, puis `MediaFileId`. Si aucune partie suivante n'existe, proposer un redémarrage depuis la première partie exploitable selon ces mêmes critères.
+4. `Alternative` signifie toujours fichier complet et n'est jamais interprétée comme une partie. Elle peut être choisie comme source complète après le dernier pointeur, `Primary`, `Part` exact et `Segment` exact ; elle ne masque pas une partie en prétendant couvrir son intervalle.
+5. Si aucune association n'est exploitable, ne pas démarrer de lecture et conserver la progression. Une association nouvellement retenue est inscrite dans la nouvelle `WatchSession`; `WatchProgress` mémorise le fichier/association et la position réellement atteinte seulement lorsque la lecture a effectivement commencé.
+
+Un ancien identifiant d'association ne peut donc pas entraîner la sélection d'une association archivée ou rejetée. Si l'ancien fichier est indisponible, la sélection reprend selon ces règles parmi les associations actives ; aucun historique n'est supprimé pour résoudre ce changement.
 
 ```mermaid
 erDiagram
@@ -453,9 +505,9 @@ erDiagram
   USER ||--o{ WATCH_SESSION : creates
   MEDIA_WORK ||--o{ WATCH_PROGRESS : target
   MEDIA_WORK ||--o{ WATCH_SESSION : target
-  MEDIA_FILE o|--o{ WATCH_SESSION : used_file
+  MEDIA_FILE o|--o{ WATCH_SESSION : historical_file
   MEDIA_FILE o|--o{ WATCH_PROGRESS : last_file
-  MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_SESSION : used_assignment
+  MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_SESSION : historical_assignment
   MEDIA_FILE_ASSIGNMENT o|--o{ WATCH_PROGRESS : last_assignment
 ```
 
@@ -492,7 +544,7 @@ Sous Windows, une solution adaptée est DPAPI ou le gestionnaire de secrets Wind
 - `MediaWork.Id` est interne et obligatoire.
 - `WorkType` est requis et limité à `Movie`, `Series`, `Episode` ; colonnes conditionnelles cohérentes avec ce type ;
 - les contraintes conditionnelles de TPH limitent les colonnes Movie, Series et Episode au `WorkType` correspondant ;
-- **PROPOSÉ** : chaque `Episode.SeriesWorkId` est obligatoire et référence un `MediaWork` de type `Series` ; `Episode.SeasonId` est facultatif ;
+- `Episode.SeriesWorkId` est obligatoire et référence un `MediaWork` de type `Series` ; `Episode.SeasonId` est facultatif ;
 - `Season` a une clé candidate `(SeriesWorkId, Id)` ; si `Episode.SeasonId` est renseigné, la paire `(Episode.SeriesWorkId, Episode.SeasonId)` référence `(Season.SeriesWorkId, Season.Id)`, garantissant la même série ;
 - les références typées de fournisseur et d'arc vers épisode ne peuvent référencer qu'un `MediaWork` de type `Episode` ;
 - une `StoryArc` référence une seule série ; chaque `EpisodeStoryArc` contient le `SeriesWorkId` et référence par deux clés composites l'arc et l'épisode de cette même série ;
@@ -505,13 +557,17 @@ Sous Windows, une solution adaptée est DPAPI ou le gestionnaire de secrets Wind
 - `MediaFileAssignment(MediaWorkId, MediaVersionId)` référence une clé candidate `MediaVersion(MediaWorkId, Id)` afin de garantir en base l'appartenance de la version à la même œuvre ;
 - `MediaFileAssignment` expose la clé candidate `(MediaWorkId, MediaFileId, Id)` pour que les références de reprise garantissent la cohérence œuvre/fichier/association ;
 - `SegmentStartMs` et `SegmentEndMs` sont tous deux nuls ou tous deux renseignés ; `SegmentStartMs >= 0`, `SegmentEndMs > SegmentStartMs` ;
+- pour `Part` confirmée/manuelle, `WorkStartMs >= 0` et `WorkEndMs > WorkStartMs` ; les deux bornes sont nulles ensemble uniquement pour une association `Proposed` incomplète ;
 - le segment ne dépasse pas `MediaFile.DurationMs` si la durée est connue ; cette comparaison intertable est vérifiée par invariant applicatif ;
 - le rôle et le statut de rapprochement proviennent de valeurs contrôlées ; `Part` exige `PartNumber > 0`, `Segment` exige `PlaybackOrder > 0`, et un `PlaybackOrder` renseigné est positif ;
-- les données propres aux rôles sont exclusives : `Part` ne porte pas de bornes de segment, `Segment` ne porte pas de `PartNumber`, et `Primary`/`Alternative` représentent des fichiers complets sans bornes ni numéro de partie ;
+- les données propres aux rôles sont exclusives : `Part` exige `PartNumber` et ses bornes logiques, peut porter des bornes physiques ; `Segment` exige `PlaybackOrder` et des bornes physiques pour être confirmé/exploitable, et n'a ni `PartNumber` ni bornes logiques ; `Primary`/`Alternative` n'ont ni bornes, ni `PartNumber`, ni `WorkStartMs`/`WorkEndMs` ;
+- la durée physique effective d'une partie, si connue, est égale à `WorkEndMs - WorkStartMs`; les bornes logiques confirmées ne se chevauchent pas et leur ordre temporel correspond à l'ordre de partie ;
+- pour `Segment`, `PlaybackOrder` croît avec `SegmentStartMs` ; un segment confirmé dont les bornes ou la cohérence temporelle manquent n'est pas exploitable automatiquement ;
 - une seule association active existe par paire `(MediaWorkId, MediaFileId)`, indépendamment du rôle/version ; une association `Rejected` ou archivée ne compte pas comme active. Un même fichier peut ainsi être associé à plusieurs œuvres/épisodes, mais pas deux fois à la même œuvre ;
 - pour `Part`, `(MediaWorkId, COALESCE(MediaVersionId, sentinel), PartNumber)` et, si renseigné, `(MediaWorkId, COALESCE(MediaVersionId, sentinel), PlaybackOrder)` sont uniques parmi les associations actives ;
 - pour `Segment`, `(MediaFileId, PlaybackOrder)` est unique parmi les associations actives ; les segments confirmés d'un fichier ne se chevauchent pas, sauf arbitrage explicite ;
 - pour `Primary`, `(MediaWorkId, COALESCE(MediaVersionId, sentinel))` est unique parmi les associations actives ;
+- une association `Part` avec des bornes logiques ou physiques inconnues, ou dont les durées sont incohérentes, ne peut pas fournir une reprise intérieure automatique ;
 - la taille d'un fichier ne constitue pas une empreinte ;
 - une racine désactivée, inaccessible ou inconnue ne peut pas faire passer ses fichiers à `Missing` ;
 - seul un scan dont la portée du répertoire contenant le fichier est complètement énumérée peut vérifier l'absence ; `LastSeenAt` et `LastVerifiedAt` ont des significations séparées ;
@@ -525,8 +581,17 @@ Sous Windows, une solution adaptée est DPAPI ou le gestionnaire de secrets Wind
 - `WatchProgress` et `WatchSession` peuvent référencer `MediaFileAssignment` ; si renseigné, le triplet `(MediaWorkId, MediaFileId, MediaFileAssignmentId)` doit désigner la même association ;
 - les sessions de visionnage ne ciblent que des `MediaWork` de type `Movie` ou `Episode` ; pour `Series`, `PositionMs` et `DurationMs` restent nuls ;
 - `WatchProgress.PositionMs` est non négatif ; `DurationMs` est positif lorsqu'il est connu ; une session `InProgress` n'a pas de fin, une session terminale en a une ;
+- `WatchSession.Status` est limité à `InProgress`, `EndedNormally`, `Interrupted`, `Error` ; `MediaEndReached` peut être nul si inconnu ;
+- `WatchProgress` passe à `Watched` seulement par confirmation utilisateur ou politique explicite ; terminer une session n'est pas une transition suffisante ;
 - `WatchSession` référence obligatoirement l'utilisateur et l'œuvre ; ses références au fichier/association sont facultatives et ne cascade pas ;
 - chaque table de candidats de métadonnées autorise au plus un `IsSelected = true` par identifiant de sujet, `FieldName` et `LocaleCode` ;
+- `FieldName`, `LocaleCode`, `ValueType` et `CandidateValue` sont obligatoires ; `ValueType` est une valeur contrôlée et la valeur JSON est canonique selon ce type ;
+- l'équivalence des candidats inclut sujet, champ, langue, provenance/fournisseur, `ValueType` et valeur canonique ; une synchronisation identique met à jour la ligne et non sa sélection ;
+- les valeurs canoniques typées sont valides selon `ValueType`; `ProviderId` est non nul pour la provenance `Provider` et nul pour `Manual`/`Local` ; les candidats équivalents sont uniques par sujet/champ/langue/source/type/valeur ;
+- une synchronisation fournisseur ne peut ni modifier ni désélectionner une valeur manuelle validée ;
+- une valeur rejetée ne peut être sélectionnée ; les candidats fournisseur ne deviennent sélectionnés qu'après validation et résolution explicite ;
+- `WatchSession` conserve ses associations historiques même archivées/rejetées ; la sélection d'une nouvelle source exclut ces associations et tout fichier/racine non accessible ;
+- `WatchSession.EndedNormally` ne marque jamais à lui seul `WatchProgress` comme `Watched`; `MediaEndReached` et la politique de visionnage sont distincts ;
 - les sessions en cours peuvent exister en plusieurs exemplaires si la politique de concurrence multi-appareils le permet ; aucune unicité active n'est supposée avant arbitrage ;
 - les identifiants externes restent associés à une entité fortement typée ;
 - les métadonnées restent associées à une entité fortement typée ;
@@ -535,6 +600,8 @@ Sous Windows, une solution adaptée est DPAPI ou le gestionnaire de secrets Wind
 ### Limites SQLite / EF Core
 
 SQLite et EF Core peuvent garantir les clés étrangères, les unicités, les `CHECK` locaux à une ligne et les clés composites vers la version, la série, la saison et l'association. Les clés candidates doivent être explicites. Les index uniques partiels (par exemple `WHERE SeasonNumber IS NOT NULL`) sont disponibles dans SQLite ; la configuration EF Core des filtres/index d'expression doit être vérifiée.
+
+Les valeurs de métadonnées typées sont stockées comme JSON canonique en texte ; la validation du JSON, la canonicalisation identique entre fournisseurs et les index uniques partiels portant sur cette valeur doivent être vérifiés avec la version SQLite et le fournisseur EF Core ciblés. Ces règles ne sont pas garanties par une validation d'interface seule.
 
 La recommandation TPH place `WorkType` et toutes les colonnes spécialisées dans `MediaWork`. Des `CHECK` peuvent exiger les propriétés conditionnelles appropriées selon `WorkType`; les relations typées peuvent utiliser des clés candidates composites `(Id, WorkType)` avec un type attendu. Les relations entre saisons, épisodes et arcs exigent des clés composites tenant compte de la série parente. Cette conception doit être validée par un prototype EF Core/SQLite ultérieur avant toute migration, sans remettre en cause le choix TPH.
 
@@ -555,10 +622,11 @@ Index obligatoires ou fortement recommandés :
 - `MediaFileAssignment(MediaWorkId, MediaVersionId, IsArchived)`
 - `MediaFileAssignment(MediaFileId, IsArchived)`
 - `MediaFileAssignment(MediaWorkId, MediaFileId)` unique partiel avec `IsArchived = 0 AND MatchStatus <> 'Rejected'` ; interdit de dupliquer le lien actif quel que soit son rôle/version
-- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel), PartNumber)` unique partiel pour `Role = 'Part'` et associations actives (`PartNumber` est non nul par règle de rôle)
-- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel), PlaybackOrder)` unique partiel pour `Role = 'Part' AND PlaybackOrder IS NOT NULL` et associations actives
-- `MediaFileAssignment(MediaFileId, PlaybackOrder)` unique partiel pour `Role = 'Segment'` et associations actives (`PlaybackOrder` est non nul par règle de rôle)
-- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel))` unique partiel pour `Role = 'Primary'` et associations actives
+- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel), PartNumber)` unique partiel pour `Role = 'Part' AND IsArchived = 0 AND MatchStatus <> 'Rejected'`
+- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel), PlaybackOrder)` unique partiel pour `Role = 'Part' AND PlaybackOrder IS NOT NULL AND IsArchived = 0 AND MatchStatus <> 'Rejected'`
+- `MediaFileAssignment(MediaFileId, PlaybackOrder)` unique partiel pour `Role = 'Segment' AND IsArchived = 0 AND MatchStatus <> 'Rejected'`
+- `MediaFileAssignment(MediaWorkId, COALESCE(MediaVersionId, sentinel))` unique partiel pour `Role = 'Primary' AND IsArchived = 0 AND MatchStatus <> 'Rejected'`
+- `MediaFileAssignment(MediaWorkId, Role, WorkStartMs, WorkEndMs)` pour la recherche d'intervalle des parties
 - `Season(SeriesWorkId, SeasonNumber)` unique partiel lorsque `SeasonNumber IS NOT NULL`
 - `Season(SeriesWorkId)` unique partiel lorsque `SeasonKind = Unknown`
 - `Season(SeriesWorkId, SortOrder)` unique
@@ -571,6 +639,8 @@ Index obligatoires ou fortement recommandés :
 - `MediaWorkMetadata(MediaWorkId, FieldName, LocaleCode, IsSelected)`
 - `SeasonMetadata(SeasonId, FieldName, LocaleCode, IsSelected)`
 - unicité sélectionnée partielle par `(MediaWorkId, FieldName, LocaleCode)` ou `(SeasonId, FieldName, LocaleCode)`, `WHERE IsSelected = 1`
+- unicité candidat fournisseur partielle par `(MediaWorkId, FieldName, LocaleCode, ProviderId, Provenance, ValueType, CandidateValue)` et `(SeasonId, FieldName, LocaleCode, ProviderId, Provenance, ValueType, CandidateValue)`, `WHERE ProviderId IS NOT NULL`
+- unicité candidat local/manuelle partielle par `(MediaWorkId, FieldName, LocaleCode, Provenance, ValueType, CandidateValue)` et `(SeasonId, FieldName, LocaleCode, Provenance, ValueType, CandidateValue)`, `WHERE ProviderId IS NULL`
 - `WatchProgress(UserId, MediaWorkId)` unique
 - `WatchProgress(UserId, UpdatedAt)`
 - `WatchSession(UserId, MediaWorkId, StartedAt)`
@@ -627,15 +697,15 @@ Stocker `MediaRoot.AbsolutePath` et `MediaFile.RelativePath`. Ne pas rendre un c
 
 Les éléments suivants restent `À ARBITRER` :
 
-1. obligation d'un `SeriesWorkId` pour chaque épisode ;
-2. représentation canonique de la saison spéciale 0 et de la saison inconnue ;
-3. adoption des segments et des règles d'ordre/partie proposées ;
+1. représentation canonique de la saison spéciale 0 et de la saison inconnue ;
+2. validation et source des offsets temporels multipartites, et règle d'ajustement lorsqu'une reprise exacte est impossible ;
+3. adoption des limites `SegmentStartMs`/`SegmentEndMs` pour les associations `Part` ;
 4. rapprochement des références externes qui couvrent plusieurs épisodes ;
 5. normalisation exacte des chemins Windows, notamment Unicode et dossiers sensibles à la casse ;
 6. seuil et règle confirmant qu'un fichier est réellement supprimé après un échec temporaire ;
 7. passage d'une session `InProgress` à `Interrupted` après arrêt brutal, et utilité de l'état `Error` ;
-8. priorité de lecture globale ou individuelle ;
-9. validation de l'unité milliseconde et de la position relative à l'œuvre ;
+8. adoption du nom `EndedNormally` en remplacement de `Completed` ;
+9. priorité de lecture globale ou individuelle ;
 10. seuil automatique de passage à `Watched` ;
 11. politique de sélection des métadonnées et de validation des valeurs fournisseur ;
 12. politique de conservation ou d'anonymisation de l'historique utilisateur ;

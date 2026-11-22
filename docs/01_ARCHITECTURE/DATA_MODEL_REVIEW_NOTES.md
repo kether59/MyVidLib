@@ -16,7 +16,7 @@
 
 - **Clé d'équivalence des métadonnées**: `(sujet typé, FieldName, LocaleCode, Provenance, ProviderId, ValueType, CandidateValue canonique)` définit l'équivalence. Deux candidats équivalents ne créent pas de doublon ; la synchronisation réutilise la ligne existante, met à jour `RawValue` et `LastFetchedAt`, sans modifier validation ni sélection. Une valeur canonique différente crée un nouveau candidat `Proposed`.
 
-- **État de session (`LastSessionState`)**: `WatchSession.Completed` est remplacé par `LastSessionState` avec valeurs `EndedNormally`, `Error`, `Interrupted`, `Cancelled`. `EndedNormally` signifie arrêt contrôlé, pas fin du média ni œuvre visionnée. `MediaEndReach` distingue fin naturelle signalée par le lecteur.
+- **État de session (`WatchSession.Status`)**: `WatchSession.Completed` est remplacé par `WatchSession.Status` avec valeurs `EndedNormally`, `Error`, `Interrupted`. `EndedNormally` signifie arrêt contrôlé, pas fin du média ni œuvre visionnée. `MediaEndReached` distingue fin naturelle signalée par le lecteur.
 
 - **Sélection d'association**: Les règles de sélection privilégient la dernière association exploitables ; `Primary` puis `Alternative` pour œuvre sur fichier complet, avec départage stable par version et identifiant fichier. Les parties suivent règle d'intervalle dédiée : `PartNumber` obligatoire et positif, `WorkStartMs >= 0` et `WorkEndMs > WorkStartMs` requis pour association confirmée/manuelle. Aucun historique n'est supprimé lors changement d'association ; le nouveau pointeur de progression mis à jour au début effective de lecture.
 

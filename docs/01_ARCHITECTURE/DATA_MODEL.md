@@ -1,6 +1,7 @@
 ﻿# MyVidLib — Modèle de données conceptuel V2.2.1
 
 **Version :** Conceptuelle V2.2.1
+**Date :** 21/11/2026
 **Statut :** PROPOSÉ — EN ATTENTE DE VALIDATION HUMAINE.
 **Périmètre :** conception conceptuelle uniquement ; aucune implémentation EF Core ou base de données ne doit être créée avant arbitrage.
 

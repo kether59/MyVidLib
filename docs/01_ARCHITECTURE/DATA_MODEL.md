@@ -1,8 +1,8 @@
 ﻿# MyVidLib — Modèle de données conceptuel V2.3
 
-**Version :** Conceptuelle V2.3
-**Date :** 21/11/2026
-**Statut :** VALIDÉ — V2.3 consolidée, arbitrages clôturés, modèle validé.
+**Version :** Conceptuelle V2.3.1
+**Date :** 22/11/2026
+**Statut :** EN RECONCILIATION — V2.3 corrigée suite à l'audit des 18 arbitrages et de la décision complémentaire sur les doublons physiques. En attente de validation propriétaire.
 **Périmètre :** conception conceptuelle uniquement ; aucune implémentation EF Core ou base de données ne doit être créée avant arbitrage.
 
 ## 1. Statut et périmètre
@@ -35,13 +35,15 @@ Les éléments ajoutés en V2.2, V2.2.1 et V2.3 qui ne figurent pas dans la list
 
 1. **Identité stable** — `MediaWork.Id` identifie une œuvre dans MyVidLib. Il ne porte aucun identifiant fournisseur.
 2. **Séparation du logique et du physique** — une œuvre, un fichier et une version sont des concepts distincts. **Un film = un fichier physique ; un épisode = un fichier physique ; une série = œuvre conteneur sans fichier vidéo.** Les parties, segments et versions alternatives sont exclus.
-3. **Relations explicites** — toute relation fichier/œuvre utilise une entité de liaison (`MediaFileAssignment`). Une œuvre a un fichier principal actif ; les copies supplémentaires sont détectées comme doublons physiques.
-4. **Relations référentielles sûres** — aucune relation polymorphique ne sert d'ancre aux identifiants externes ou métadonnées.
-5. **Traçabilité** — fournisseurs, récupérations, validations humaines et valeurs retenues restent distingués.
-6. **Archivage par défaut** — les suppressions importantes utilisent un état actif/archivé ; elles ne déclenchent pas de cascade destructrice.
-7. **États indépendants** — une racine, un fichier, une œuvre et un utilisateur possèdent chacun leur propre disponibilité ou cycle de vie.
-8. **Indexabilité** — les chemins normalisés et les index sont définis pour éviter les duplications accidentelles sans imposer une empreinte coûteuse.
-9. **Simplicité de lecture** — position de lecture relative au fichier unique, pas de bornes d'œuvre multiples ni d'offsets physiques complexes.
+3. **Doublons physiques** — une œuvre possède un unique fichier principal actif. Des copies physiques supplémentaires peuvent exister sur d'autres disques ou partages. Chaque copie possède un `CopyStatus` (`Primary`, `Detected`, `Rejected`, `Promoted`) et une empreinte pour le rapprochement. Une copie `Promoted` peut devenir le nouveau fichier principal via action administrative confirmée. **Une copie conservée ne doit pas devenir une deuxième association principale active.**
+4. **Relations explicites** — toute relation fichier/œuvre utilise une entité de liaison (`MediaFileAssignment`). Une œuvre a un fichier principal actif ; les copies supplémentaires sont détectées comme doublons physiques.
+5. **Relations référentielles sûres** — aucune relation polymorphique ne sert d'ancre aux identifiants externes ou métadonnées.
+6. **Traçabilité** — fournisseurs, récupérations, validations humaines et valeurs retenues restent distingués.
+7. **Archivage par défaut** — les suppressions importantes utilisent un état actif/archivé ; elles ne déclenchent pas de cascade destructrice.
+8. **États indépendants** — une racine, un fichier, une œuvre et un utilisateur possèdent chacun leur propre disponibilité ou cycle de vie.
+9. **Indexabilité** — les chemins normalisés et les index sont définis pour éviter les duplications accidentelles sans imposer une empreinte coûteuse.
+10. **Simplicité de lecture** — position de lecture relative au fichier unique, pas de bornes d'œuvre multiples ni d'offsets physiques complexes.
+11. **Priorité globale des sources et sélection du fichier** — la priorité globale des sources (configurable) détermine le fichier `Present` à privilégier parmi les copies physiques d'une œuvre. Lorsqu'un fichier principal devient indisponible, le système construit les candidats exploitables (copie `Primary` active ou copie physique confirmée), les ordonne selon la priorité globale des sources, et peut promouvoir une copie confirmée au rang de `Primary` via action administrative explicite. L'administrateur peut choisir manuellement un autre emplacement, action tracée dans la session. Si aucun candidat n'est exploitable, on ne démarre pas de lecture et on conserve la progression.
 
 ## 3. Diagramme conceptuel global
 
@@ -96,11 +98,11 @@ Les propriétés propres à chaque spécialisation sont séparées :
 |---|---|
 | Movie | date ou année de sortie, durée de référence (DurationMs) |
 | Series | statut de diffusion, nombre de saisons, période de diffusion |
-| **Episode** | **SeriesWorkId obligatoire, SeasonId facultatif ; numéro interne éventuel, date de diffusion, durée de référence (si connue, la durée de l'épisode en millisecondes relative au début de l'épisode), type d'épisode |
+| **Episode** | **SeriesWorkId obligatoire, SeasonId obligatoire (saison `Unknown` si saison inconnue) ; numéro interne éventuel, date de diffusion, durée de référence (si connue, la durée de l'épisode en millisecondes relative au début de l'épisode), type d'épisode |
 
 **Pour les épisodes :**
-- L'entité MediaWork d'un épisode porte SeriesWorkId obligatoire, car il appartient obligatoirement à une série. L'épisode peut exister sans saison connue (SeasonId = null).
-- **La propriété DurationMs sur un épisode représente la durée totale de l'épisode en millisecondes, relative au début de l'épisode**. Elle est facultative et doit être déterminée par FFprobe ou renseignée manuellement. Une valeur nulle indique que la durée est inconnue. Cette durée peut différer des bornes WorkStartMs/WorkEndMs d'une association Part spécifique : une partie d'un épisode ne couvre pas nécessairement toute sa durée. Un épisode sans fichier associé (MediaFileAssignment) n'a pas de durée connue ; son DurationMs sera nul jusqu'à ce qu'une association soit faite et que FFprobe fournisse la durée.
+- L'entité MediaWork d'un épisode porte SeriesWorkId obligatoire, car il appartient obligatoirement à une série. L'épisode est systématiquement rattaché à une saison de sa série : si la saison est inconnue, il appartient à la saison technique `Unknown` (SeasonKind = `Unknown`, SeasonNumber = null) de cette série ; `SeasonId` ne reste jamais nul pour un épisode dont la saison est inconnue.
+- **La propriété DurationMs sur un épisode représente la durée totale de l'épisode en millisecondes, relative au début de l'épisode**. Elle est facultative et doit être déterminée par FFprobe ou renseignée manuellement. Une valeur nulle indique que la durée est inconnue.
 
 **WorkType vaut Movie, Series ou Episode.** Les colonnes propres à un type restent conceptuellement séparées et nulles pour les autres types. Pour une ligne Episode, SeriesWorkId désigne une ligne MediaWork de type Series; la saison peut rester inconnue (SeasonId = null) sans perdre l'appartenance à la série. Une classification contrôlée et extensible (Classification, MediaWorkClassification) identifie notamment Anime sans ajouter de type structurel.
 
@@ -132,11 +134,11 @@ Regroupe les épisodes d'une série. Elle porte un identifiant interne stable, `
 
 ### Episode
 
-`Episode` est toujours rattaché à une série par `SeriesWorkId` ; `SeasonId` est facultatif. Il peut exister sans fichier ou sans saison connue.
+`Episode` est toujours rattaché à une série par `SeriesWorkId` ; `SeasonId` référence obligatoirement une saison de cette série, et la saison technique `Unknown` est utilisée lorsque la saison métier n'est pas connue. Il peut exister sans fichier associé.
 
 **Validation V2.3 :** un épisode = un fichier physique. La case de découpage multipartite est supprimée : un épisode n'est représenté que par une seule association `Primary` vers un fichier unique.
 
-Conserver `SeriesWorkId` sur l'épisode permet le rattachement même lorsque la saison est inconnue. Lorsque `SeasonId` est renseigné, la clé composite `(SeriesWorkId, SeasonId)` garantit que la saison appartient à cette même série ; l'identifiant direct de série évite de déduire une relation obligatoire depuis une saison qui peut être absente.
+Conserver `SeriesWorkId` sur l'épisode permet le rattachement même lorsque la saison est inconnue (saison `Unknown`). Lorsque `SeasonId` est renseigné, la clé composite `(SeriesWorkId, SeasonId)` garantit que la saison appartient à cette même série ; l'identifiant direct de série évite de déduire une relation obligatoire depuis une saison qui peut être absente.
 
 Elle distingue au minimum : `Standard`, `Special`, `OAV`, `ONA` et d'autres types justifiés. Un arc narratif n'est pas un type d'épisode. Les numéros internes sont propres à MyVidLib ; les identifiants, numéros et regroupements externes sont conservés dans des références de catalogue par fournisseur.
 
@@ -265,9 +267,9 @@ L'unicité physique est `(MediaRootId, NormalizedRelativePath)`. `RelativePath` 
 - Un chemin absolu local est canonisé en tenant compte de la lettre de lecteur ; UNC conserve son préfixe `\\serveur\partage` et normalise les segments relatifs selon la même règle. Un changement de lettre ou de point de montage met à jour `MediaRoot.AbsolutePath` sans changer son `Id` ; il ne réécrit pas les identifiants de fichiers avant une réconciliation.
 - Le chemin configuré conserve ses séparateurs canoniques Windows (`\`). Les séparateurs finaux ne sont retirés qu'aux chemins de fichiers ; préserver les formes racines comme `C:\` et `\\serveur\partage\`.
 - Deux chemins textuellement différents peuvent être des alias (lettre mappée/UNC, jonction, lien symbolique). Ne pas fusionner automatiquement les racines ni prétendre reconnaître l'identité physique par la seule chaîne du chemin.
-- La sensibilité à la casse activée sur un dossier Windows peut contredire la comparaison Windows usuelle. Recommandation V1 : détecter et signaler ce cas plutôt que fusionner silencieusement des chemins distincts ; la prise en charge complète des répertoires sensibles à la casse reste à arbitrer.
+- La sensibilité à la casse sur un dossier Windows peut contredire la comparaison usuelle. La normalisation recommandée applique `ToUpperInvariant` aux composants de chemin sur les répertoires ne comportant pas de règles de sensibilité à la casse configurées ; sur les dossiers sensibles à la casse, la comparaison utilise un index binaire `NormalizedRelativePath` stocké et comparé sans transformation de casse, garantissant l'identité exacte du chemin tel que configuré. L'application fournit une fonction de résolution centralisée qui applique la règle adéquate selon la configuration du dossier racine, sans fusionner silencieusement des chemins distincts. Un index unique sur la seule forme affichée `RelativePath` ne suffit pas.
 
-La règle `ToUpperInvariant` est **PROPOSÉE** ; sa conformité aux comparaisons réelles Windows pour les cas Unicode doit être validée sur les plateformes cibles. La fonction de normalisation applicative, l'index SQLite binaire et les comparaisons de chemins doivent partager la même règle et être vérifiés sur les cas Unicode, UNC, lecteurs mappés et racines. Un index unique sur la seule forme affichée ne suffit pas.
+La règle `ToUpperInvariant` pour les composants de chemin, couplée à l'index binaire `NormalizedRelativePath` sur les dossiers sensibles à la casse, constitue le modèle de référence V2.3. La fonction de normalisation applicative, l'index SQLite binaire et les comparaisons de chemins doivent partager la même règle et être vérifiés sur les cas Unicode, UNC, lecteurs mappés et racines. Un index unique sur la seule forme affichée ne suffit pas.
 
 Le changement de chemin physique d'une racine conserve l'identité interne de `MediaRoot`. Le chemin précédent peut être historisé pour diagnostic ; un changement ne réécrit pas les identifiants de fichiers avant une réconciliation réussie.
 
@@ -287,7 +289,9 @@ Règles impératives :
 - `Unknown` signifie qu'aucune vérification fiable récente n'est disponible ;
 - `MediaFile.AvailabilityStatus` représente la dernière disponibilité établie de façon fiable. La possibilité de la vérifier maintenant est déterminée par l'état courant de la racine et la couverture du dernier scan, sans effacer cette dernière observation ;
 - une exception FFprobe est une erreur d'analyse du fichier, pas une preuve d'absence ;
-- les événements du système de fichiers peuvent suggérer une modification, mais ne remplacent pas la réconciliation par scan.
+- les événements du système de fichiers peuvent suggérer une modification, mais ne remplacent pas la réconciliation par scan ;
+- une source est déclarée `Inaccessible` uniquement après **plusieurs tentatives espacées** dans le temps, avec un **délai configurable** (par défaut 24h minimum depuis la première absence confirmée) ; la distinction entre disque débranché, partage réseau indisponible et erreur d'accès est conservée ;
+- une source inaccessible ne doit jamais provoquer de suppression du catalogue.
 
 ### Scan
 
@@ -405,7 +409,15 @@ Pour chaque sujet typé, champ et code langue/locale, au maximum une ligne peut 
 
 La provenance couvre à la fois les textes, traductions, identifiants, images et données techniques locales. Les licences ou conditions d'accès doivent être conservables, même si les champs exacts restent à préciser.
 
-## 12. Utilisateurs
+### Actualisation périodique des métadonnées
+
+L'actualisation des métadonnées est configurable :
+
+- **Actualisation périodique mensuelle** : reprise programmée une fois par mois (ou selon fréquence configurable) pour rafraîchir `RawValue`, `LastFetchedAt` et, selon la réponse du fournisseur ou sa politique, `ExpiresAt` ;
+- **Actualisation manuelle** : possible à tout moment, à la demande de l'utilisateur ou de l'administrateur ;
+- **Pas d'écrasement** : une donnée validée manuellement et sélectionnée n'est jamais écrasée automatiquement par une actualisation fournisseur ;
+- **Pas de suppression** : en cas d'échec d'un fournisseur, les métadonnées existantes ne sont pas supprimées.
+
 
 `User` porte l'identité locale, le nom normalisé, le rôle, l'état actif, les informations de connexion et les dates de création/modification.
 
@@ -483,7 +495,7 @@ erDiagram
 
 ## 14. Suppression et archivage
 
-Les suppressions physiques ne sont jamais effectuées par défaut.
+Les suppressions physiques ne sont jamais effectuées par défaut, sauf action administrative explicite et confirmée.
 
 | Entité | Comportement recommandé |
 |---|---|
@@ -491,7 +503,7 @@ Les suppressions physiques ne sont jamais effectuées par défaut.
 | MediaRoot | désactivation ou archivage ; ne jamais supprimer les `MediaFile` physiquement indexés |
 | User | désactivation ou archivage ; anonymiser ou conserver selon règle validée |
 | Provider/Source | désactivation ; conserver les données récupérées hors ligne |
-| MediaFile | conserver l'enregistrement ; `Missing` seulement après trois scans complets et 24h ; motif et date de suppression enregistrés pour distinguer suppression volontaire d'absence détectée par scan |
+| MediaFile | **Suppression physique volontaire par l'administrateur uniquement** : action explicite avec confirmation du chemin physique, enregistrement de la date, de l'utilisateur et du motif ; passage immédiat à `Missing` après suppression réussie ; l'enregistrement `MediaFile` est conservé ; l'œuvre, ses métadonnées et son historique sont préservés. La règle des trois scans et des 24 heures ne concerne que la détection automatique d'absence, pas une suppression physique volontaire. |
 | MediaFileAssignment | archivage ou rejet ; ne pas supprimer l'œuvre ou le fichier |
 
 Aucune suppression d'œuvre ne supprime les fichiers physiques. Une suppression logique peut archiver les associations pour éviter des données orphelines.
@@ -499,6 +511,28 @@ Aucune suppression d'œuvre ne supprime les fichiers physiques. Une suppression 
 ## 15. Paramètres et secrets
 
 Les réglages sont séparés en quatre classes :
+Aucune suppression d'œuvre ne supprime les fichiers physiques. Une suppression logique peut archiver les associations pour éviter des données orphelines.
+
+### Conservation de l'historique
+
+La conservation de l'historique est configurée comme suit :
+
+- **Conservation illimitée par défaut** : les progressions, sessions, métadonnées et rapprochements sont conservés indéfiniment ;
+- **Pas de purge automatique** : aucune purge automatique des données d'historique n'est effectuée ;
+- **Purge manuelle possible** par l'administrateur ;
+- **Suppression des données d'un utilisateur** sans toucher au catalogue commun ni aux données des autres utilisateurs.
+
+## 15. Sauvegarde et sécurité
+
+La politique de sauvegarde et de sécurité garantit la reprise après incident :
+
+- **Sauvegarde complète** : comprend la base de données SQLite, la configuration applicative, les comptes utilisateurs, les progressions et historiques, les métadonnées locales, les associations et identifiants des fournisseurs, les images téléchargées et le cache utile ;
+- **Fichiers vidéo non inclus** par défaut : les fichiers vidéo originaux restent à leur emplacement physique d'origine et ne font pas l'objet d'une copie de sauvegarde ;
+- **Protection des secrets** : sous Windows, protection par DPAPI ou gestionnaire de secrets Windows ; aucun secret en clair dans Git ou les fichiers de configuration ;
+- **Procédure de migration et de restauration** prévue. Le futur serveur Linux devra utiliser un mécanisme de protection des secrets adapté (par exemple stockage dans un coffre système chiffré ou service tiers) ;
+- **États sauvegardés** : la sauvegarde inclut les états `AvailabilityStatus` des racines et fichiers, mais la reprise doit recalculer les chemins normalisés selon la configuration actuelle.
+
+## 15. Paramètres et secrets
 
 - `ApplicationSettings` : paramètres globaux applicatifs ;
 - `UserSettings` : préférences individuelles ;

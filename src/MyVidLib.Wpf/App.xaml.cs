@@ -73,7 +73,7 @@ public partial class App : System.Windows.Application
         }
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    protected override void OnExit(ExitEventArgs e)
     {
         try
         {
@@ -84,14 +84,18 @@ public partial class App : System.Windows.Application
 
                 try
                 {
-                    // Graceful host shutdown with a bounded delay. ConfigureAwait(false)
-                    // keeps the continuation off the WPF Dispatcher, which may already be
-                    // stopping during application shutdown.
-                    await _host.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                    // WPF does not await async void OnExit. To guarantee the host shutdown
+                    // completes before the Dispatcher tears down, we block synchronously with a
+                    // bounded timeout instead of relying on an asynchronous continuation that
+                    // might run after the Dispatcher has already stopped.
+                    var stopTask = _host.StopAsync(TimeSpan.FromSeconds(5));
+                    if (!stopTask.Wait(TimeSpan.FromSeconds(7)))
+                    {
+                        Log.Warning("Host StopAsync did not complete within the expected timeout. Proceeding with disposal.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // Never swallow silently: log and continue to dispose/flush.
                     Log.Error(ex, "Host StopAsync failed during shutdown.");
                 }
             }
@@ -102,7 +106,7 @@ public partial class App : System.Windows.Application
         }
         finally
         {
-            // Release host resources even if the graceful stop failed.
+            // Release host resources even if the graceful stop failed or timed out.
             if (_host is not null)
             {
                 try

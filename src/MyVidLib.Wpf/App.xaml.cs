@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MyVidLib.Infrastructure.DependencyInjection;
+using MyVidLib.Infrastructure.Logging;
 using MyVidLib.Wpf.ViewModels;
 using Serilog;
 
@@ -32,12 +33,9 @@ public partial class App : System.Windows.Application
             var logDirectory = Path.Combine(appData, "MyVidLib", "Logs");
             Directory.CreateDirectory(logDirectory);
 
-            Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Information)
-                .Enrich.FromLogContext()
-                .WriteTo.Console(
-                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            // Single source of truth for base configuration (level, enrich, console sink).
+            // File sink added here (Wpf composition root only).
+            Log.Logger = LoggingBootstrap.CreateDefaultConfiguration()
                 .WriteTo.File(
                     path: Path.Combine(logDirectory, "myvidlib-.log"),
                     rollingInterval: RollingInterval.Day,
@@ -77,16 +75,35 @@ public partial class App : System.Windows.Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
-        if (_host is not null)
+        try
         {
-            var logger = _host.Services.GetService<ILogger<App>>();
-            logger?.LogInformation("MyVidLib shutting down.");
-            await _host.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
-            _host.Dispose();
-        }
+            if (_host is not null)
+            {
+                var logger = _host.Services.GetService<ILogger<App>>();
+                logger?.LogInformation("MyVidLib shutting down.");
 
-        Log.CloseAndFlush();
-        base.OnExit(e);
+                try
+                {
+                    await _host.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    // Never swallow silently: log and continue to dispose/flush.
+                    Log.Error(ex, "Host StopAsync failed during shutdown.");
+                }
+
+                _host.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error while shutting down the host.");
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+            base.OnExit(e);
+        }
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -102,13 +119,21 @@ public partial class App : System.Windows.Application
 
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        if (e.ExceptionObject is Exception ex)
+        try
         {
-            Log.Fatal(ex, "Unhandled AppDomain exception. IsTerminating={IsTerminating}", e.IsTerminating);
+            if (e.ExceptionObject is Exception ex)
+            {
+                Log.Fatal(ex, "Unhandled AppDomain exception. IsTerminating={IsTerminating}", e.IsTerminating);
+            }
+            else
+            {
+                Log.Fatal("Unhandled AppDomain exception (non-Exception). IsTerminating={IsTerminating}", e.IsTerminating);
+            }
         }
-        else
+        finally
         {
-            Log.Fatal("Unhandled AppDomain exception (non-Exception). IsTerminating={IsTerminating}", e.IsTerminating);
+            // Flush immediately: process may terminate right after this event.
+            try { Log.CloseAndFlush(); } catch { /* best effort on fatal path */ }
         }
     }
 

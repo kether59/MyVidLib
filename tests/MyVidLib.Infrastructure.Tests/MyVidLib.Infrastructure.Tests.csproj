@@ -24,6 +24,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+<ItemGroup>
+    <PackageReference Include="Serilog" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\MyVidLib.Infrastructure\MyVidLib.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\MyVidLib.Application\MyVidLib.Application.csproj" />

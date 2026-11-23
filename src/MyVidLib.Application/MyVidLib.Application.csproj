@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>MyVidLib.Application</RootNamespace>
+    <AssemblyName>MyVidLib.Application</AssemblyName>
+    <Description>MyVidLib application layer: use cases, DTOs, ports and orchestration.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MyVidLib.Domain\MyVidLib.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

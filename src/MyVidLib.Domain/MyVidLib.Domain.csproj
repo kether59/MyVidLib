@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>MyVidLib.Domain</RootNamespace>
+    <AssemblyName>MyVidLib.Domain</AssemblyName>
+    <Description>MyVidLib domain layer: entities, value objects, enums and business rules.</Description>
+  </PropertyGroup>
+
+</Project>

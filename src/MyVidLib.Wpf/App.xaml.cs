@@ -84,15 +84,16 @@ public partial class App : System.Windows.Application
 
                 try
                 {
-                    await _host.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+                    // Graceful host shutdown with a bounded delay. ConfigureAwait(false)
+                    // keeps the continuation off the WPF Dispatcher, which may already be
+                    // stopping during application shutdown.
+                    await _host.StopAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     // Never swallow silently: log and continue to dispose/flush.
                     Log.Error(ex, "Host StopAsync failed during shutdown.");
                 }
-
-                _host.Dispose();
             }
         }
         catch (Exception ex)
@@ -101,6 +102,19 @@ public partial class App : System.Windows.Application
         }
         finally
         {
+            // Release host resources even if the graceful stop failed.
+            if (_host is not null)
+            {
+                try
+                {
+                    _host.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Error while disposing the host during shutdown.");
+                }
+            }
+
             Log.CloseAndFlush();
             base.OnExit(e);
         }
@@ -108,13 +122,13 @@ public partial class App : System.Windows.Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        // Log the exception: never swallow silently.
         Log.Error(e.Exception, "Unhandled dispatcher exception.");
-        e.Handled = true;
-        MessageBox.Show(
-            "An unexpected error occurred. The application will continue if possible.",
-            "MyVidLib – Error",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
+
+        // M0: no UI-level recovery strategy exists yet. Do not mask the error as handled:
+        // leave it unhandled so WPF performs a safe shutdown, which routes through OnExit
+        // (host stop, dispose, Serilog flush).
+        e.Handled = false;
     }
 
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)

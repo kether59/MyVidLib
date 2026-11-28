@@ -10,9 +10,10 @@ public class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        var connectionString = "Data Source=:memory:";
 
         // Act
-        var result = services.AddInfrastructure();
+        var result = services.AddInfrastructure(connectionString);
 
         // Assert
         Assert.Same(services, result);
@@ -23,9 +24,10 @@ public class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        var connectionString = "Data Source=:memory:";
 
         // Act / Assert
-        var exception = Record.Exception(() => services.AddInfrastructure());
+        var exception = Record.Exception(() => services.AddInfrastructure(connectionString));
 
         Assert.Null(exception);
     }
@@ -35,9 +37,10 @@ public class ServiceCollectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection();
+        var connectionString = "Data Source=:memory:";
 
         // Act
-        services.AddInfrastructure();
+        services.AddInfrastructure(connectionString);
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions
             {

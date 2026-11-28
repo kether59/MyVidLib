@@ -47,7 +47,10 @@ public partial class App : System.Windows.Application
                 .UseSerilog()
                 .ConfigureServices((context, services) =>
                 {
-                    services.AddInfrastructure();
+                    // SQLite connection string: local app data folder, file myvidlib.db
+                    var dbPath = Path.Combine(appData, "MyVidLib", "myvidlib.db");
+                    var connectionString = $"Data Source={dbPath}";
+                    services.AddInfrastructure(connectionString);
                     services.AddSingleton<MainViewModel>();
                     services.AddSingleton<MainWindow>();
                 })

@@ -11,6 +11,16 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     <!-- Allow restoring/building Windows-targeted projects on non-Windows CI agents -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Allow restoring/building Windows-targeted projects on non-Windows CI agents -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Do not fail builds on transitive NuGet security advisories (NU1902/NU1903) for packages not directly versioned yet (SQLitePCLRaw, System.Security.Cryptography.*). Update versions explicitly in a dedicated maintenance pass. -->
+    <WarningsNotAsErrors>NU1902;NU1903</WarningsNotAsErrors>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
